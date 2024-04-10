@@ -1,19 +1,9 @@
 import { Hono } from 'hono'
 
+import TransactionController from './routes/transaction'
+
 const app = new Hono()
 
-app.get('/transaction', (c) => {
-  c.status(200)
-
-  return c.json({transactions: []})
-})
-
-app.post('/transaction', (c) => {
-  const bodyRecebido = c.req.parseBody()
-
-  c.status(200)
-
-  return c.json(bodyRecebido)
-})
+app.route('/transaction', TransactionController)
 
 export default app
