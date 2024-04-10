@@ -28,7 +28,8 @@ TransactionController.post('/', async (c) => {
     const createdTransaction = await pgClient.transaction.create({
         data: {
             amount, description, method,
-            name, cpf, card_number, valid, cvv
+            name, cpf, card_number: card_number.substr(-4),
+            valid, cvv
         }
     });
 
