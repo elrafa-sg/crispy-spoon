@@ -1,23 +1,22 @@
-import { Hono } from 'hono'
-
-import { pgClient } from '../../database/postgresql'
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { Transaction } from '@prisma/client'
-import { addDays } from 'date-fns'
 
-const TransactionController = new Hono()
+import { TransactionService } from '../../services/TransactionService'
+
+const TransactionController = new OpenAPIHono()
 
 TransactionController.get('/', async (c) => {
     let transactionList: Transaction[] = []
 
     try {
-        transactionList = await pgClient.transaction.findMany()
+        transactionList = await TransactionService.getTransactions()
         c.status(200)
+        return c.json({ transactionList })
     }
     catch (err) {
         c.status(500)
+        return c.json({ message: 'Internal Server Error' })
     }
-
-    return c.json({ transactionList })
 })
 
 TransactionController.post('/', async (c) => {
@@ -25,40 +24,137 @@ TransactionController.post('/', async (c) => {
         name, cpf, card_number, valid, cvv
     } = await c.req.json()
 
-    const createdTransaction = await pgClient.transaction.create({
-        data: {
+    try {
+        const createdTransaction = await TransactionService.createTransaction({
             amount, description, method,
-            name, cpf, card_number: card_number.substr(-4),
-            valid, cvv
-        }
-    });
+            name, cpf, card_number, valid, cvv
+        })
 
-    switch (createdTransaction.method) {
-        case "PIX":
-            await pgClient.payable.create({
-                data: {
-                    transactionId: createdTransaction.id,
-                    status: 'PAID',
-                    fee: 2.99,
-                    payment_date: new Date()
-                }
-            })
-            break;
-        case "CREDIT_CARD":
-            await pgClient.payable.create({
-                data: {
-                    transactionId: createdTransaction.id,
-                    status: 'WATING_FUNDS',
-                    fee: 8.99,
-                    payment_date: addDays(new Date(), 15)
-                }
-            })
-            break;
+        c.status(200)
+        return c.body(`Transação ${createdTransaction.id} criada com sucesso!`)
     }
-
-    c.status(200)
-
-    return c.body(`Transação ${createdTransaction.id} criada com sucesso!`)
+    catch (err) {
+        c.status(500)
+        return c.body(`Internal Server Error`)
+    }
 })
+
+// SWAGGER / OPEN API
+const defaultResponse = z.object({
+    message: z.string()
+})
+
+const TransactionSchema = z.object({
+    id: z.number(),
+    amount: z.number(),
+    description: z.string(),
+    method: z.enum(['PIX', 'CREDIT_CARD']),
+    name: z.string(),
+    cpf: z.string(),
+    card_number: z.string(),
+    valid: z.string(),
+    cvv: z.number()
+})
+
+const CreateTransactionParam = z.object({
+    amount: z.number(),
+    description: z.string(),
+    method: z.enum(['PIX', 'CREDIT_CARD']),
+    name: z.string(),
+    cpf: z.string(),
+    card_number: z.string(),
+    valid: z.string(),
+    cvv: z.number()
+})
+
+const getTransactions = createRoute({
+    method: "get",
+    path: "/",
+    responses: {
+        200: {
+            content: {
+                "application/json": {
+                    schema: z.array(TransactionSchema)
+                },
+            },
+            description: "Get a list with all transactions",
+        },
+        500: {
+            content: {
+                "application/json": {
+                    schema: defaultResponse
+                },
+            },
+            description: "Internal server error"
+        },
+    }
+});
+
+const createTransaction = createRoute({
+    method: "post",
+    path: "/",
+    request: {
+        body: {
+            content: {
+                "application/json": {
+                    schema: CreateTransactionParam
+                }
+            }
+        }
+    },
+    responses: {
+        200: {
+            content: {
+                "application/json": {
+                    schema: defaultResponse,
+                },
+            },
+            description: "Create a transaction",
+        },
+        500: {
+            content: {
+                "application/json": {
+                    schema: defaultResponse
+                },
+            },
+            description: "Internal server error"
+        },
+    }
+})
+
+TransactionController.openapi(getTransactions, async (c) => {
+    let transactionList: Transaction[] = []
+
+    try {
+        transactionList = await TransactionService.getTransactions()
+        c.status(200)
+        return c.json(transactionList)
+    }
+    catch (err) {
+        c.status(500)
+        return c.json({ message: 'Internal Server Error' })
+    }
+});
+
+TransactionController.openapi(createTransaction, async (c) => {
+    const { amount, description, method,
+        name, cpf, card_number, valid, cvv
+    } = await c.req.json()
+
+    try {
+        const createdTransaction = await TransactionService.createTransaction({
+            amount, description, method,
+            name, cpf, card_number, valid, cvv
+        })
+
+        c.status(200)
+        return c.json({ message: `Transação ${createdTransaction.id} criada com sucesso!` })
+    }
+    catch (err) {
+        c.status(500)
+        return c.json({ message: `Internal Server Error` })
+    }
+});
+
 
 export default TransactionController
