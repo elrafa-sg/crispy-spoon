@@ -1,6 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { Transaction } from '@prisma/client'
 
+import { transactionQueue } from '../../bullmq.config'
 import { TransactionService } from '../../services/TransactionService'
 
 const TransactionController = new OpenAPIHono()
@@ -24,19 +25,13 @@ TransactionController.post('/', async (c) => {
         name, cpf, card_number, valid, cvv
     } = await c.req.json()
 
-    try {
-        const createdTransaction = await TransactionService.createTransaction({
-            amount, description, method,
-            name, cpf, card_number, valid, cvv
-        })
+    await transactionQueue.add(`Transaction:${cpf}:${new Date().valueOf()}`, {
+        amount, description, method,
+        name, cpf, card_number, valid, cvv
+    });
 
-        c.status(200)
-        return c.body(`Transação ${createdTransaction.id} criada com sucesso!`)
-    }
-    catch (err) {
-        c.status(500)
-        return c.body(`Internal Server Error`)
-    }
+    c.status(202)
+    return c.json({message: `Transação enviada para processamento com sucesso!`})
 })
 
 // SWAGGER / OPEN API
@@ -155,6 +150,5 @@ TransactionController.openapi(createTransaction, async (c) => {
         return c.json({ message: `Internal Server Error` })
     }
 });
-
 
 export default TransactionController
