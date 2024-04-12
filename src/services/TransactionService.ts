@@ -1,7 +1,18 @@
-import { Transaction } from "@prisma/client"
+import { PaymentMethod, Transaction } from "@prisma/client"
 import { addDays } from 'date-fns'
 
 import { pgClient } from "../database/postgresql"
+
+type CreateTransactionParam = {
+    amount: number,
+    description: string,
+    method: PaymentMethod,
+    name: string,
+    cpf: string,
+    card_number: string
+    valid: string,
+    cvv: number 
+}
 
 class TransactionService {
     static async getTransactions() {
@@ -12,11 +23,16 @@ class TransactionService {
         return transactionList
     }
 
-    static async createTransaction({ amount, description, method, name, cpf, card_number, valid, cvv }) {
+    static async createTransaction(createTransactionParams: CreateTransactionParam) {
+        const {
+            amount, description, method,
+            name, cpf, card_number, valid, cvv
+        } = createTransactionParams
+
         const createdTransaction = await pgClient.transaction.create({
             data: {
                 amount, description, method,
-                name, cpf, card_number: card_number.substr(-4),
+                name, cpf, card_number: card_number.substring(-4),
                 valid, cvv
             }
         });
