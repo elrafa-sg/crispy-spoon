@@ -1,11 +1,24 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { Transaction } from '@prisma/client'
+import { parseISO } from 'date-fns'
 
 import { transactionQueue } from '../../bullmq.config'
 import { TransactionService } from '../../services/TransactionService'
 
 const TransactionController = new OpenAPIHono()
 
+type TransactionData = {
+    amount: number
+    description: string,
+    method: string,
+    name: string,
+    cpf: string,
+    card_number: string,
+    valid: string,
+    cvv: number
+}
+
+// ROTAS
 TransactionController.get('/', async (c) => {
     let transactionList: Transaction[] = []
 
@@ -21,9 +34,17 @@ TransactionController.get('/', async (c) => {
 })
 
 TransactionController.post('/', async (c) => {
+    const requestBody = await c.req.json()
+
+    const errors = validateTransactionData(requestBody)
+    if (errors.length > 0) {
+        c.status(422);
+        return c.json(errors)
+    }
+
     const { amount, description, method,
         name, cpf, card_number, valid, cvv
-    } = await c.req.json()
+    } = requestBody
 
     await transactionQueue.add(`Transaction:${cpf}:${new Date().valueOf()}`, {
         amount, description, method,
@@ -31,10 +52,63 @@ TransactionController.post('/', async (c) => {
     });
 
     c.status(202)
-    return c.json({message: `Transação enviada para processamento com sucesso!`})
+    return c.json({ message: `Transação enviada para processamento com sucesso!` })
 })
 
-// SWAGGER / OPEN API
+//#region VALIDAÇÕES
+function validateTransactionData(data: TransactionData) {
+    const errors = [];
+    const { amount, description, method,
+        name, card_number, valid, cvv
+    } = data
+
+    // Validação do valor da transação
+    if (!Number.isInteger(amount) || amount <= 0) {
+        errors.push('Campo "amount" inválido: valor deve ser um número inteiro positivo em centavos');
+    }
+
+    // Validação da descrição da transação
+    if (!description || typeof description !== 'string') {
+        errors.push('Campo "description" inválido: deve ser uma string');
+    }
+
+    // Validação do nome do pagador
+    if (!name || typeof name !== 'string') {
+        errors.push('Campo "name" inválido: deve ser uma string');
+    }
+
+    // Validação do método de pagamento
+    if (!['PIX', 'CREDIT_CARD'].includes(method)) {
+        errors.push('Campo "method" inválido: deve ser "PIX" ou "CREDIT_CARD"');
+    }
+
+    // Validação do número do cartão (se CREDIT_CARD)
+    if (method === 'CREDIT_CARD' && (!card_number || typeof card_number !== 'string')) {
+        errors.push('Campo "card_number" inválido: formato de número de cartão inválido');
+    }
+
+    // Validação da data de validade (se CREDIT_CARD)
+    function isValidCardDate(valid: string) {
+        const parsedISO = parseISO(valid)
+        if (parsedISO instanceof Date && !isNaN(parsedISO.getTime())) {
+            return true
+        }
+        return false
+    }
+    if (method === 'CREDIT_CARD' && (!valid || typeof valid !== 'string' || !isValidCardDate(valid))) {
+        errors.push('Campo "valid" inválido: formato de data de validade inválido (MMAA)');
+    }
+
+    // Validação do CVV (se credit_card)
+    if (method === 'CREDIT_CARD' && (!cvv || !Number.isInteger(cvv) || cvv.toString().length != 3)) {
+        errors.push('Campo "cvv" inválido: formato de código de segurança inválido');
+    }
+
+    return errors;
+}
+//#endregion
+
+//#region SWAGGER / OPEN API
 const defaultResponse = z.object({
     message: z.string()
 })
@@ -150,5 +224,6 @@ TransactionController.openapi(createTransaction, async (c) => {
         return c.json({ message: `Internal Server Error` })
     }
 });
+//#endregion
 
 export default TransactionController
