@@ -89,11 +89,14 @@ function validateTransactionData(data: TransactionData) {
 
     // Validação da data de validade (se CREDIT_CARD)
     function isValidCardDate(valid: string) {
-        const parsedISO = parseISO(valid)
-        if (parsedISO instanceof Date && !isNaN(parsedISO.getTime())) {
-            return true
+        const month = valid.substring(0, 2)
+        const year = valid.substring(2) 
+        if (parseInt(month) > 12 || parseInt(month) < 1 || month.length != 2
+            || year.length != 2
+        ) {
+            return false
         }
-        return false
+        return true
     }
     if (method === 'CREDIT_CARD' && (!valid || typeof valid !== 'string' || !isValidCardDate(valid))) {
         errors.push('Campo "valid" inválido: formato de data de validade inválido (MMAA)');
