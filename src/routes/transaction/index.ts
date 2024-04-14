@@ -180,6 +180,14 @@ const createTransaction = createRoute({
             },
             description: "Create a transaction",
         },
+        422: {
+            content: {
+                "application/json": {
+                    schema: z.array(z.string())
+                }
+            },
+            description: 'Unprocessable Entity'
+        },
         500: {
             content: {
                 "application/json": {
@@ -206,23 +214,25 @@ TransactionController.openapi(getTransactions, async (c) => {
 });
 
 TransactionController.openapi(createTransaction, async (c) => {
+    const requestBody = await c.req.json()
+
+    const errors = validateTransactionData(requestBody)
+    if (errors.length > 0) {
+        c.status(422);
+        return c.json(errors)
+    }
+
     const { amount, description, method,
         name, cpf, card_number, valid, cvv
-    } = await c.req.json()
+    } = requestBody
 
-    try {
-        const createdTransaction = await TransactionService.createTransaction({
-            amount, description, method,
-            name, cpf, card_number, valid, cvv
-        })
+    await transactionQueue.add(`Transaction:${cpf}:${new Date().valueOf()}`, {
+        amount, description, method,
+        name, cpf, card_number, valid, cvv
+    });
 
-        c.status(200)
-        return c.json({ message: `Transação ${createdTransaction.id} criada com sucesso!` })
-    }
-    catch (err) {
-        c.status(500)
-        return c.json({ message: `Internal Server Error` })
-    }
+    c.status(202)
+    return c.json({ message: `Transação enviada para processamento com sucesso!` })
 });
 //#endregion
 
