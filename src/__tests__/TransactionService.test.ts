@@ -61,4 +61,29 @@ describe('TransactionService', () => {
             cvv: expect.any(Number),
         })
     })
+
+    it('should return http 422 with description of fields with errors', async () => {
+        const createdTransaction = await fetch('http://localhost:3000/transaction', {
+            method: 'POST',
+            body: JSON.stringify({
+                amount: 123.45,
+                description: 'Teste com erro nos dados',
+                method: 'CREDIT_CARD',
+                name: 'John Foo',
+                cpf: '12345678912',
+                card_number: '1234567890123456',
+                valid: '1342',
+                cvv: 1234
+            }),
+            headers: new Headers({ 'Content-Type': 'application/json' })
+        });
+
+        expect(createdTransaction.status).toBe(422)
+
+        const errors = await createdTransaction.json()
+        expect(errors).toEqual([
+            "Campo \"amount\" inválido: valor deve ser um número inteiro positivo em centavos",
+            "Campo \"cvv\" inválido: formato de código de segurança inválido"
+          ]);
+    })
 })
